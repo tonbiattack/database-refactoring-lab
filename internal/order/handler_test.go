@@ -49,6 +49,22 @@ func TestHandlerRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsTrailingJSONWithoutUpdatingOrder(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository, ReadModeFallback, WriteModeDual)
+	request := httptest.NewRequest(http.MethodPut, "/orders/1/status", strings.NewReader(`{"status":"shipped"}{"status":"canceled"}`))
+	recorder := httptest.NewRecorder()
+
+	NewHandler(service).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d", recorder.Code)
+	}
+	if repository.updated {
+		t.Fatal("repository must not be updated")
+	}
+}
+
 func testService() *Service {
 	legacy := 2
 	return NewService(&fakeRepository{order: Order{ID: 1, StatusCode: &legacy}}, ReadModeFallback, WriteModeDual)

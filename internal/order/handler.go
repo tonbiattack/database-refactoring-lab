@@ -2,6 +2,7 @@ package order
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,6 +42,10 @@ func NewHandler(service *Service) http.Handler {
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&request); err != nil || request.Status == "" {
 				writeError(w, http.StatusBadRequest, "status is required")
+				return
+			}
+			if err := decoder.Decode(&struct{}{}); err != io.EOF {
+				writeError(w, http.StatusBadRequest, "request body must contain one JSON object")
 				return
 			}
 			if err := service.UpdateStatus(r.Context(), id, request.Status); err != nil {

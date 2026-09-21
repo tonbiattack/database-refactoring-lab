@@ -106,17 +106,27 @@ Inconsistent:   0
 Unknown:        2
 ~~~
 
-不整合を意図的に作ると、Validateが検出します。
+不整合を意図的に作ると、Validateが検出します。id=1はScenario Cでstatus_codeが変更されていても、status_codeが2であることを前提にしない次のSQLなら必ず不整合になります。
 
 ~~~bash
 docker compose exec -T mysql mysql -uapp -papp refactoring_lab \
-  -e "UPDATE orders SET status='shipped' WHERE status_code=1"
+  -e "UPDATE orders SET status='canceled' WHERE id=1"
 go run ./cmd/validate
 ~~~
 
 id=1が対象ならInconsistentは1になります。検証後は、初期化してScenario Aからやり直してください。
 
-Backfill中にlegacy書き込みを続けると、同じ問題が起きます。Backfill後にWRITE_MODE=legacyでstatus_codeだけを変更すると、新旧の値がずれます。すべての書き込み元をWRITE_MODE=dualへ切り替えてからBackfillすることで、新しい不整合を防げます。
+Backfill中にlegacy書き込みを続けると、同じ問題が起きます。Backfill後に次のようにlegacy APIでid=2をcanceledへ更新すると、status_codeだけが変わり、ValidateはInconsistentを検出します。
+
+~~~bash
+WRITE_MODE=legacy READ_MODE=fallback go run ./cmd/api
+curl -X PUT http://localhost:8080/orders/2/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"canceled"}'
+go run ./cmd/validate
+~~~
+
+初期化してBackfillをやり直した後、同じ更新をWRITE_MODE=dualで実行すると、新旧の値が同時に更新され、ValidateはInconsistent: 0を維持します。すべての書き込み元をdualへ切り替えてからBackfillすることで、新しい不整合を防げます。
 
 ## Scenario F: Switchする
 
@@ -146,4 +156,4 @@ docker compose run --rm flyway -target=5 migrate
 docker compose run --rm flyway -target=6 migrate
 ~~~
 
-V006後はstatus_codeがないため、legacy書き込みとfallback読み取りは使えません。
+V006後はstatus_codeがないため、この学習用APIは使用しません。Repositoryが移行過程を可視化するためにstatus_codeを明示的にSELECT・UPDATEしているため、legacy・dual・fallback・newのどのモードでも動作しません。本番では、V006の前にstatus_codeに依存しないRepository実装へ切り替え、そちらのテストとデプロイを完了してから旧カラムを削除します。
